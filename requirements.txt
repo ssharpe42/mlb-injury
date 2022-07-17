@@ -1,0 +1,8 @@
+pandas
+numpy
+scipy
+requests==2.27.1
+pyarrow==7.0.0
+tick
+matplotlib
+seaborn
