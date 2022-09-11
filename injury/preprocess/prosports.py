@@ -37,19 +37,6 @@ class ProsportsCleaner:
             # Day to day
             dtd=prosports["notes"].str.contains("DTD"),
         )
-        # # Add date cols
-        # prosports["date"] = pd.to_datetime(prosports["date"])
-        # prosports["year"] = prosports["date"].dt.year
-
-        # # Add name column based on acquired/relinquished
-        # prosports["activated"] = prosports["relinquished"].isnull()
-        # prosports["name"] = np.where(
-        #     prosports["acquired"].isnull(),
-        #     prosports["relinquished"],
-        #     prosports["acquired"],
-        # )
-        # # Day to day
-        # prosports["dtd"] = prosports.notes.str.contains("DTD")
 
         return prosports.drop(columns=["acquired", "relinquished"])
 
@@ -60,7 +47,6 @@ class ProsportsCleaner:
             .str.replace(r"[\(\[].*?[\)\]]", "", regex=True)
             .str.replace("•", "", regex=False)
         )
-        # prosports["name"] = prosports["name"].str.replace("•", "", regex=False)
 
         # remove non-names & empty notes
         prosports = prosports[

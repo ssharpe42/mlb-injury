@@ -17,10 +17,10 @@ DEFAULT_INJURY = "misc/unk"
 
 
 class InjuryCategorizer:
-    def __init__(self, injury_data):
-        self.injury_data = injury_data
+    """Process injury notes and categorize injury location/type"""
 
-    def _preprocess_raw_injury_data(self, injury_data):
+    @staticmethod
+    def _preprocess_raw_injury_data(injury_data):
         """Preprocess injury data.
 
         - Keep transactions to the IL
@@ -77,10 +77,12 @@ class InjuryCategorizer:
                 )[0]
             )
         ).astype(float)
+        injury_data.loc[injury_data["dtd"], "il_days"] = 0
 
         return injury_data
 
-    def _injury_priority_map(self, injuries, mapping, priority):
+    @staticmethod
+    def _injury_priority_map(injuries, mapping, priority):
         """Mapping to resolve injury priorities if there are multiple types/locations
 
         Args:
@@ -139,8 +141,8 @@ class InjuryCategorizer:
 
         return injury_data
 
-    def process(self):
+    def process(self, injury_data):
 
-        return self.injury_data.pipe(self._preprocess_raw_injury_data).pipe(
+        return injury_data.pipe(self._preprocess_raw_injury_data).pipe(
             self._resolve_injury_priority
         )

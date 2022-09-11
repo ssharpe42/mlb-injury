@@ -22,7 +22,7 @@ def scrape_dtd_data(
         start = f"{year}-01-01"
         end = f"{year}-12-31"
         while True:
-            url = f"https://www.prosportstransactions.com/baseball/Search/SearchResults.php?Player=&Team=&BeginDate={start}&EndDate={end}&DLChkBx=yes&prosportsChkBx=yes&submit=Search&start={len(prosports)*25}"
+            url = f"https://www.prosportstransactions.com/baseball/Search/SearchResults.php?Player=&Team=&BeginDate={start}&EndDate={end}&DLChkBx=yes&InjuriesChkBx=yes&submit=Search&start={len(prosports)*25}"
             r = requests.get(url)
             scraped_df = pd.read_html(r.text, header=0)[0]
             if scraped_df.empty:

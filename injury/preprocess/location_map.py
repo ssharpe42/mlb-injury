@@ -65,6 +65,7 @@ alt_location_spellings = {
         "rhomboid",
         "tailbone",
         "thoracic",
+        "(s\.i\.|si) joint",
     ],
     " torso ": [
         "rib",

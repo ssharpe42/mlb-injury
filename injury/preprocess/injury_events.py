@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from IPython import embed
 
 from .injury_map import injury_priority
 from .location_map import location_priority
@@ -70,11 +71,12 @@ def cum_season_days(data):
 
 
 class InjuryEvents:
-    def __init__(self, injury_data, mlb_players):
-        self.injury_data = injury_data
-        self.mlb_players = mlb_players
+    # def __init__(self, injury_data, mlb_players):
+    #     self.injury_data = injury_data
+    #     self.mlb_players = mlb_players
 
-    def _combine_injuries_and_games(self, injury_data, player_data):
+    @staticmethod
+    def _combine_injuries_and_games(injury_data, player_data):
         """Combine player games and injuries to determine injury time spans
         and active player windows.
 
@@ -97,9 +99,10 @@ class InjuryEvents:
         # Use first name from injury data otherwise player data
         data["name"] = data.groupby("player_id")["name"].transform("first")
 
-        return data.sort_values("date")
+        return data.sort_values(["date", "game"], ascending=[True, False])
 
-    def _game_indicators(self, data):
+    @staticmethod
+    def _game_indicators(data):
 
         # Get indicators and dates for prev/next games
         data = data.assign(
@@ -116,40 +119,50 @@ class InjuryEvents:
             player_first_row=data["prev_is_game"].isnull(),
             player_last_row=data["next_is_game"].isnull(),
         )
+        data["prev_game_date_game"] = data.groupby("player_id")[
+            "game_date"
+        ].shift(1)
+        data.loc[data["game"] == 1, "prev_game_date"] = data.loc[
+            data["game"] == 1, "prev_game_date_game"
+        ]
+        data.drop(columns=["prev_game_date_game"], inplace=True)
 
         return data
 
-    def _calculate_non_mlb_time(self, data):
+    @staticmethod
+    def _calculate_non_mlb_time(data, season_days):
 
-        # Calculate time spent not playing/outside of majors
-        # Any >15 day span not injured within the same year
+        data = data.merge(
+            season_days.rename(
+                columns={
+                    "date": "prev_game_date",
+                    "season_days": "prev_season_days",
+                }
+            ),
+            how="left",
+        ).merge(
+            season_days.rename(
+                columns={"date": "game_date", "season_days": "cum_season_days"}
+            ),
+            how="left",
+        )
         return data.assign(
-            time_since_last_game=np.where(
-                data["game_date"].dt.year
-                == data.groupby("player_id")["game_date"].shift(1).dt.year,
-                (
-                    data["game_date"]
-                    - data.groupby("player_id")["game_date"].shift(1)
-                ).dt.days,
-                0,
+            time_since_last_game=(
+                data["cum_season_days"] - data["prev_season_days"]
             ),
             non_mlb_days=lambda x: x["time_since_last_game"]
             * ((x["time_since_last_game"] > 15) & x["prev_is_game"]),
-        )
+        ).drop(columns=["prev_season_days", "cum_season_days"])
 
-    def _compute_injury_spans(self, data):
-
-        data = self._game_indicators(data)
+    @staticmethod
+    def _compute_injury_spans(data):
 
         # Injury span
         data["injury_span_id"] = data.groupby("player_id")["game"].transform(
             "cumsum"
         )
         # Remove for non-injuries (games)
-        data.loc[
-            data["game"] == 1,
-            ["prev_game_date", "next_game_date", "injury_span_id"],
-        ] = np.nan
+        data.loc[data["game"] == 1, "injury_span_id"] = np.nan
 
         # Create span ids during healthy playing days
         data["injury_span_id"] = data.groupby("player_id")[
@@ -162,11 +175,28 @@ class InjuryEvents:
             data["injury_span_id"].max() + 1
         )
 
-        data = self._calculate_non_mlb_time(data)
+        data.loc[data["game"] == 0, "player_last_row"] = data.groupby(
+            ["player_id", "injury_span_id"]
+        )["player_last_row"].transform("max")[data["game"] == 0]
+
+        data.loc[data["game"] == 0, "player_first_row"] = data.groupby(
+            ["player_id", "injury_span_id"]
+        )["player_first_row"].transform("max")[data["game"] == 0]
+
+        data["injury_span_id_orig"] = data["injury_span_id"]
+
+        data["injury_span_id"] = (
+            data["injury_span_id"].astype(int).astype(str)
+            + "_"
+            + data["player_first_row"].astype(int).astype(str)
+            + data["player_last_row"].astype(int).astype(str)
+        )
+        # need to account for multiple injuries in last span
 
         return data
 
-    def _summarize_injury_spans(self, data):
+    @staticmethod
+    def _summarize_injury_spans(data):
 
         data = data.assign(
             injury_type=pd.Categorical(
@@ -175,24 +205,64 @@ class InjuryEvents:
             injury_location=pd.Categorical(
                 data["injury_location"], np.flip(location_priority)
             ).as_ordered(),
-            non_mlb_days=data.groupby(["player_id", "injury_span_id"])[
+            non_mlb_days=data.groupby(["player_id", "injury_span_id_orig"])[
                 "non_mlb_days"
             ].transform(sum),
-            il_days_max=data.groupby(["player_id", "injury_span_id"])[
+            il_days_max=data.groupby(["player_id", "injury_span_id_orig"])[
                 "il_days"
             ].transform(max),
-            il_days_sum=data.groupby(["player_id", "injury_span_id"])[
+            il_days_sum=data.groupby(["player_id", "injury_span_id_orig"])[
                 "il_days"
             ].transform(sum),
+            dtd=data.groupby(["player_id", "injury_span_id_orig"])["dtd"]
+            .transform(min)
+            .astype(bool),
         )
 
-        data[["injury_location", "injury_type"]] = data.groupby(
-            ["player_id", "injury_span_id"]
-        )[["injury_location", "injury_type"]].transform(max)
+        def resolve_injury(df, col="injury_type"):
+            """Resolve injuries in a span
+
+            If all are null/misc return the highest priority location/type
+
+            Otherwise find the longest il day stint that is not misc, and tie break all
+            il stints of that length with the location priority
+            """
+
+            if df[
+                df["injury_location"].notnull()
+                & (df["injury_location"] != "misc/unk")
+            ].empty:
+                df[["injury_type", "injury_location"]] = df[
+                    ["injury_type", "injury_location"]
+                ].max(axis=0)
+            else:
+
+                df_ = df[df["injury_location"] != "misc/unk"].sort_values(
+                    "il_days", ascending=False
+                )
+                df_ = df_[
+                    df_.il_days == df_.iloc[0, df.columns.get_loc("il_days")]
+                ].sort_values("injury_location")
+                df[["injury_type", "injury_location"]] = df_.iloc[
+                    0,
+                    [
+                        df.columns.get_loc("injury_type"),
+                        df.columns.get_loc("injury_location"),
+                    ],
+                ]
+            return df
+
+        data = data.groupby(["player_id", "injury_span_id_orig"]).apply(
+            resolve_injury
+        )
+
+        # data[["injury_location", "injury_type"]] = data.groupby(
+        #     ["player_id", "injury_span_id_orig"]
+        # )[["injury_location", "injury_type"]].transform(max)
 
         # First row per player injury span
         data = (
-            data.sort_values(["date"])
+            data.sort_values(["date", "game"], ascending=[True, False])
             .groupby(["player_id", "injury_span_id"], as_index=False)
             .nth(0)
         )
@@ -208,9 +278,10 @@ class InjuryEvents:
             .replace("nan", np.nan)
         )
 
-        return self._filter_to_events(data)
+        return data
 
-    def _filter_to_events(self, data):
+    @staticmethod
+    def _filter_to_events(data):
         return (
             data[
                 (data["game"] == 0)
@@ -221,7 +292,8 @@ class InjuryEvents:
             .sort_values(["player_id", "date"])
         )
 
-    def _create_event_dataframe(self, data, season_days):
+    @staticmethod
+    def _create_event_dataframe(data, season_days):
 
         data.loc[
             data["player_first_row"], ["injury_type", "injury_location"]
@@ -298,20 +370,26 @@ class InjuryEvents:
 
         return data
 
-    def _remove_internal_injuries(self, data):
+    @staticmethod
+    def _remove_internal_injuries(data):
 
         data = data[data["injury_type"] != "internal"]
-        data["dt"] = data["t"] - data.groupby("player_id")["t"].shift(1)
+        data["dt"] = (
+            data["t"] - data.groupby("player_id")["t"].shift(1)
+        ).fillna(0)
         return data
 
-    def process(self):
+    def process(self, injury_data, mlb_players):
 
-        player_data = self.mlb_players.pipe(add_cols_player_games)
+        player_data = mlb_players.pipe(add_cols_player_games)
         season_days = cum_season_days(player_data)
         return (
-            self._combine_injuries_and_games(self.injury_data, player_data)
+            self._combine_injuries_and_games(injury_data, player_data)
+            .pipe(self._game_indicators)
             .pipe(self._compute_injury_spans)
+            .pipe(self._calculate_non_mlb_time, season_days=season_days)
             .pipe(self._summarize_injury_spans)
+            .pipe(self._filter_to_events)
             .pipe(self._create_event_dataframe, season_days=season_days)
             .pipe(self._remove_internal_injuries)
         )
