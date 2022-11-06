@@ -1,8 +1,13 @@
 pandas
 numpy
-scipy
 requests==2.27.1
 pyarrow==7.0.0
-tick
 matplotlib
 seaborn
+pytorch-lightning==1.6.3
+torch==1.11.0
+tensorboard
+torchmetrics
+einops
+plotnine
+adjustText

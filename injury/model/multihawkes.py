@@ -135,17 +135,16 @@ class RayleighKernel(nn.Module):
 
 
 class MultivariateHawkes(PointProcessModel):
-    """"""
-
     def __init__(
         self,
         kernel="exponential",
+        vocab=None,
         *args,
         **kwargs,
     ):
         super(MultivariateHawkes, self).__init__(*args, **kwargs)
         self.save_hyperparameters()
-
+        self.vocab = vocab
         self.log_mu = nn.Embedding(self.event_dim + 1, 1)
 
         if kernel == "exponential":
@@ -156,10 +155,6 @@ class MultivariateHawkes(PointProcessModel):
             self.decay = RayleighKernel(self.event_dim)
 
         nn.init.uniform_(self.log_mu.weight, -5.0, -5.0)
-        # nn.init.uniform_(self.decay.log_alpha.weight, -5.0, -5.0)
-        # nn.init.uniform_(self.decay.log_delta.weight, -5.0, -5.0)
-
-        # self.apply(self._init_weights)
 
     def reset_parameters(self):
         nn.init.uniform_(self.log_mu.weight, -5.0, -5.0)
@@ -355,100 +350,100 @@ class MultivariateHawkes(PointProcessModel):
             prev_dt[pred_mask],
         )
 
-    def predict_next(
-        self,
-        prev_events,
-        prev_times,
-        prev_dt,
-        start_times,
-        seq_lengths,
-        max_dt=1000,
-        mc_samples=1000,
-    ):
+    # def predict_next(
+    #     self,
+    #     prev_events,
+    #     prev_times,
+    #     prev_dt,
+    #     start_times,
+    #     seq_lengths,
+    #     max_dt=1000,
+    #     mc_samples=1000,
+    # ):
 
-        with torch.no_grad():
-            _, decay_params = self.forward(prev_events)
+    #     with torch.no_grad():
+    #         _, decay_params = self.forward(prev_events)
 
-        sample_dt = torch.linspace(
-            max_dt / mc_samples, max_dt, mc_samples
-        ).repeat(len(prev_events), 1)
-        sample_times = sample_dt + start_times.unsqueeze(-1)
-        # sample_times_all = prev_times.unsqueeze(-1) + sample_dt.unsqueeze(1)
+    #     sample_dt = torch.linspace(
+    #         max_dt / mc_samples, max_dt, mc_samples
+    #     ).repeat(len(prev_events), 1)
+    #     sample_times = sample_dt + start_times.unsqueeze(-1)
+    #     # sample_times_all = prev_times.unsqueeze(-1) + sample_dt.unsqueeze(1)
 
-        seq_mask = rearrange(
-            torch.arange(prev_events.shape[1]), "n -> 1 1 n 1"
-        ) < rearrange(seq_lengths, "b -> b 1 1 1")
+    #     seq_mask = rearrange(
+    #         torch.arange(prev_events.shape[1]), "n -> 1 1 n 1"
+    #     ) < rearrange(seq_lengths, "b -> b 1 1 1")
 
-        time_to_current = rearrange(
-            sample_times, "b s -> b s 1 1"
-        ) - rearrange(prev_times, "b n -> b 1 n 1")
+    #     time_to_current = rearrange(
+    #         sample_times, "b s -> b s 1 1"
+    #     ) - rearrange(prev_times, "b n -> b 1 n 1")
 
-        kernel_lambda_k = self.decay.lambda_k(
-            time_to_current, seq_mask, decay_params
-        )
+    #     kernel_lambda_k = self.decay.lambda_k(
+    #         time_to_current, seq_mask, decay_params
+    #     )
 
-        mus = self.log_mu.weight.exp().transpose(1, 0)
-        pred_lambda_k = mus + kernel_lambda_k
-        pred_lambda = pred_lambda_k.sum(2)
+    #     mus = self.log_mu.weight.exp().transpose(1, 0)
+    #     pred_lambda_k = mus + kernel_lambda_k
+    #     pred_lambda = pred_lambda_k.sum(2)
 
-        timestep = max_dt / mc_samples
-        integral_ = (timestep * pred_lambda).cumsum(1)
-        time_density = pred_lambda * torch.exp(-integral_)
+    #     timestep = max_dt / mc_samples
+    #     integral_ = (timestep * pred_lambda).cumsum(1)
+    #     time_density = pred_lambda * torch.exp(-integral_)
 
-        lambda_ratio = pred_lambda_k / pred_lambda.unsqueeze(-1)
-        time_integrand = sample_dt * time_density  # t*p_i(t)
-        event_integrand = lambda_ratio * time_density.unsqueeze(-1)
+    #     lambda_ratio = pred_lambda_k / pred_lambda.unsqueeze(-1)
+    #     time_integrand = sample_dt * time_density  # t*p_i(t)
+    #     event_integrand = lambda_ratio * time_density.unsqueeze(-1)
 
-        # Trapezoid method
-        estimate_dt = (
-            timestep * 0.5 * (time_integrand[:, 1:] + time_integrand[:, :-1])
-        ).sum(1)
-        event_prob = (
-            timestep * 0.5 * (event_integrand[:, 1:] + event_integrand[:, :-1])
-        ).sum(1)
-        event_pred = torch.argmax(event_prob, dim=1)
+    #     # Trapezoid method
+    #     estimate_dt = (
+    #         timestep * 0.5 * (time_integrand[:, 1:] + time_integrand[:, :-1])
+    #     ).sum(1)
+    #     event_prob = (
+    #         timestep * 0.5 * (event_integrand[:, 1:] + event_integrand[:, :-1])
+    #     ).sum(1)
+    #     event_pred = torch.argmax(event_prob, dim=1)
 
-        import matplotlib.pyplot as plt
+    #     import matplotlib.pyplot as plt
 
-        for indx in range(len(prev_events)):
-            fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
-            ax0.plot(
-                sample_times[indx].numpy() - start_times[indx].item(),
-                time_density[indx].detach().numpy(),
-                linestyle="-",
-                linewidth=0.8,
-            )
-            ax0.set_title(
-                "Probability density $p_i(u)$\nof the next increment"
-            )
-            ax0.set_xlabel("Time $u$")
-            ax0.set_ylabel("density $p_i(u)$")
-            ylims = ax0.get_ylim()
-            ax0.vlines(
-                estimate_dt[indx].item(),
-                *ylims,
-                linestyle="--",
-                linewidth=0.7,
-                color="red",
-                label=r"estimate $\hat{t}_i - t_{i-1}$",
-            )
-            ax0.set_ylim(ylims)
-            ax0.legend()
-            for k in range(pred_lambda_k.size(2)):
-                if k in pred_lambda_k[indx, 0, :].argsort()[-5:]:
-                    ax1.plot(
-                        sample_times[indx].numpy() - start_times[indx].item(),
-                        pred_lambda_k[indx, :, k].detach().numpy(),
-                        label="type {}".format(k),
-                        linestyle="--",
-                        linewidth=0.7,
-                    )
-            ax1.set_title(
-                f"Intensities (previous event = {prev_events[indx]})"
-            )
-            ax1.set_xlabel("Time $t$")
-            ax1.legend()
-            plt.show()
+    #     for indx in range(len(prev_events)):
+    #         fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(10, 4), dpi=100)
+    #         ax0.plot(
+    #             sample_times[indx].numpy() - start_times[indx].item(),
+    #             time_density[indx].detach().numpy(),
+    #             linestyle="-",
+    #             linewidth=0.8,
+    #         )
+    #         ax0.set_title(
+    #             "Probability density $p_i(u)$\nof the next increment"
+    #         )
+    #         ax0.set_xlabel("Time $u$")
+    #         ax0.set_ylabel("density $p_i(u)$")
+    #         ylims = ax0.get_ylim()
+    #         ax0.vlines(
+    #             estimate_dt[indx].item(),
+    #             *ylims,
+    #             linestyle="--",
+    #             linewidth=0.7,
+    #             color="red",
+    #             label=r"estimate $\hat{t}_i - t_{i-1}$",
+    #         )
+    #         ax0.set_ylim(ylims)
+    #         ax0.legend()
+    #         for k in range(pred_lambda_k.size(2)):
+    #             if k in pred_lambda_k[indx, 0, :].argsort()[-5:]:
+    #                 ax1.plot(
+    #                     sample_times[indx].numpy() - start_times[indx].item(),
+    #                     pred_lambda_k[indx, :, k].detach().numpy(),
+    #                     label="type {}".format(k),
+    #                     linestyle="--",
+    #                     linewidth=0.7,
+    #                 )
+    #         ax1.set_title(
+    #             f"Intensities (previous event = {prev_events[indx]})"
+    #         )
+    #         ax1.set_xlabel("Time $t$")
+    #         ax1.legend()
+    #         plt.show()
 
     def training_step(self, batch, batch_idx):
         loss, event_num = self._step(batch, batch_idx)
@@ -508,6 +503,10 @@ class MultivariateHawkes(PointProcessModel):
             event_probs, events_true
         ).item()
         event_acc = (event_pred == events_true).float().mean()
+        # embed()
+        # (events_true.unsqueeze(-1) == torch.topk(event_probs, 3).indices).any(
+        #     1
+        # ).float().mean()
         dt_rmse = ((estimate_dt - dt_true) ** 2).mean().sqrt().item()
         loss = (total_loss / event_num).item()
 

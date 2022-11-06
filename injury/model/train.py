@@ -16,16 +16,24 @@ parser.add_argument("-v", "--version", default=None, required=False, type=str)
 parser.add_argument(
     "-d", "--dtd", action="store_true", help="split dtd injuries"
 )
-parser.add_argument("-t", "--test_path", type=str)
+parser.add_argument(
+    "-t",
+    "--test_split",
+    default=0.15,
+    required=False,
+    type=float,
+    help="Test split percentage",
+)
+parser.add_argument("-e", "--eval_path", type=str)
+parser.add_argument("-dp", "--data_path", default="data/injury_final.parquet")
 args = parser.parse_args()
 
 
-data = pd.read_parquet("injury_final.parquet").query(
-    "injury_location!='[START]'"
-)
+data = pd.read_parquet(args.data_path).query("injury_location!='[START]'")
 
 if args.position is not None:
     data = data[data["position"] == args.position]
+
 
 if args.dtd:
     data["injury_location"] = np.where(
@@ -35,6 +43,7 @@ if args.dtd:
         + data["dtd"].map({True: " (dtd)", False: "", np.nan: "", None: ""}),
     )
 
+print(data["injury_location"].unique())
 vocab = Vocab(np.sort(data.injury_location.unique()), special_tokens=["[END]"])
 data["injury_ids"] = vocab(data["injury_location"])
 seq = (
@@ -43,24 +52,28 @@ seq = (
     .rename(columns={"injury_ids": "events", "t": "times"})
 )
 
-train = seq[["events", "times"]]
-test = train.sample(50)
-# train, test = train_test_split(
-#     seq[["events", "times"]], test_size=0.15, random_state=42
-# )
+if args.test_split == 0:
+    train = test = seq[["events", "times"]]
+else:
+    train, test = train_test_split(
+        seq[["events", "times"]], test_size=args.test_split, random_state=42
+    )
 
 pl.seed_everything(42)
-
-if args.test_path is not None:
-    nh = MultivariateHawkes.load_from_checkpoint(args.test_path).eval()
-
+if args.eval_path is not None:
+    nh = MultivariateHawkes.load_from_checkpoint(args.eval_path).eval()
+    # vocab = Vocab([])
+    # vocab.load("logs/lightning_logs/all_players_dtd_full/vocab.pkl")
+    # nh.vocab = vocab
 else:
     nh = MultivariateHawkes(
         event_dim=len(vocab),
         has_eos=True,
         bos=True,
         kernel="exponential",
+        vocab=vocab,
     )
+
 
 nh.prepare_data(
     train=train.to_dict(orient="list"),
@@ -85,7 +98,7 @@ trainer = pl.Trainer(
     logger=tb_logger,
     callbacks=[checkpoint_callback, early_stopping],
 )
-if args.test_path is None:
+if args.eval_path is None:
     trainer.fit(nh)
     vocab.save(os.path.join(trainer.log_dir, "vocab.pkl"))
 
