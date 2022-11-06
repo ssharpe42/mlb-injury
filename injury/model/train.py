@@ -34,7 +34,6 @@ data = pd.read_parquet(args.data_path).query("injury_location!='[START]'")
 if args.position is not None:
     data = data[data["position"] == args.position]
 
-
 if args.dtd:
     data["injury_location"] = np.where(
         data["injury_location"] == "[END]",
@@ -62,9 +61,6 @@ else:
 pl.seed_everything(42)
 if args.eval_path is not None:
     nh = MultivariateHawkes.load_from_checkpoint(args.eval_path).eval()
-    # vocab = Vocab([])
-    # vocab.load("logs/lightning_logs/all_players_dtd_full/vocab.pkl")
-    # nh.vocab = vocab
 else:
     nh = MultivariateHawkes(
         event_dim=len(vocab),
