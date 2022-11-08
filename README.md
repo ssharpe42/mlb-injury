@@ -1,6 +1,6 @@
 # MLB Injuries
 
-A library for scraping MLB IL/DTD stints and modeling injury risk with Temporal Point Processes. The code in this repo produces the results and plots in [](https://sharpestats.com/mlb-injury-point-process/)
+A library for scraping MLB IL/DTD stints and modeling injury risk with Temporal Point Processes. The code in this repo produces the results and plots in this [blog](https://sharpestats.com/mlb-injury-point-process/).
 
 ![df](https://sharpestats.com/assets/img/mlb-injury-point-process/trout-split-intensity.png)
 
