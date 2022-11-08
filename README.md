@@ -22,7 +22,7 @@ Scraping and aligning of these two datasets is contained in `notebooks/scrape_al
 
 ### Injury Data Preprocessing
 
-Injury mapping and event processing can be found in `injury/preprocess`. Injury data is cleaned from both sources, categorized, and combined with player game data to determine injury timing. 
+Injury mapping and event processing can be found in `injury/preprocess`. Injury data is cleaned from both sources, categorized, and combined with player game data to determine injury timing in `notebooks/inury_processing.ipynb`
 
 ### Modeling 
 
