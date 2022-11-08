@@ -7,6 +7,13 @@ from .location_map import location_priority
 
 
 def add_cols_player_games(player_data):
+    """Add date, year columns to player game data
+
+    Args:
+        player_data: player game data
+    Returns:
+        _description_
+    """
 
     # Get all player games
     return (
@@ -18,10 +25,6 @@ def add_cols_player_games(player_data):
         .sort_values("game_date")
         .reset_index(drop=True)
     )
-    # player_data["cum_games"] = player_data.groupby("player_id")["game"].transform(
-    #     "cumsum"
-    # )
-    # return player_data
 
 
 def cum_season_days(data):
@@ -103,6 +106,7 @@ class InjuryEvents:
 
     @staticmethod
     def _game_indicators(data):
+        """Fill game and prev/next game indicators for calculating spans """
 
         # Get indicators and dates for prev/next games
         data = data.assign(
@@ -131,6 +135,15 @@ class InjuryEvents:
 
     @staticmethod
     def _calculate_non_mlb_time(data, season_days):
+        """Calculate time not spent actively playing in MLB
+            - At least 15 in-season days between games
+
+        Args:
+            data: injury event data
+            season_days: cumulative season days
+        Returns:
+            injury event data with mlb time
+        """
 
         data = data.merge(
             season_days.rename(
@@ -156,6 +169,15 @@ class InjuryEvents:
 
     @staticmethod
     def _compute_injury_spans(data):
+        """Calculate injury spans (when injury time frame starts and ends)
+
+        - set original span_id as cumulative games
+        - set days where players played games to have NaN injury id
+        - backfill ids for game days
+        - set days with played games to next injury span - 1
+        - set first/last row ids for start end tokens
+
+        """
 
         # Injury span
         data["injury_span_id"] = data.groupby("player_id")["game"].transform(
@@ -197,7 +219,7 @@ class InjuryEvents:
 
     @staticmethod
     def _summarize_injury_spans(data):
-
+        """ Summarise injury data for each injury span by resolving injuries """
         data = data.assign(
             injury_type=pd.Categorical(
                 data["injury_type"], np.flip(injury_priority)
@@ -256,10 +278,6 @@ class InjuryEvents:
             resolve_injury
         )
 
-        # data[["injury_location", "injury_type"]] = data.groupby(
-        #     ["player_id", "injury_span_id_orig"]
-        # )[["injury_location", "injury_type"]].transform(max)
-
         # First row per player injury span
         data = (
             data.sort_values(["date", "game"], ascending=[True, False])
@@ -282,6 +300,7 @@ class InjuryEvents:
 
     @staticmethod
     def _filter_to_events(data):
+        """Filter to events (start, injuries, end)"""
         return (
             data[
                 (data["game"] == 0)
@@ -294,6 +313,7 @@ class InjuryEvents:
 
     @staticmethod
     def _create_event_dataframe(data, season_days):
+        """Add start end tokens and compute time passed between injuries"""
 
         data.loc[
             data["player_first_row"], ["injury_type", "injury_location"]
@@ -372,6 +392,7 @@ class InjuryEvents:
 
     @staticmethod
     def _remove_internal_injuries(data):
+        """Remove internal non-baseball injuries"""
 
         data = data[data["injury_type"] != "internal"]
         data["dt"] = (
@@ -380,6 +401,14 @@ class InjuryEvents:
         return data
 
     def process(self, injury_data, mlb_players):
+        """Run injury event processing
+
+        Args:
+            injury_data: injury data
+            mlb_players: player game_data
+        Returns:
+            dataframe of injury events
+        """
 
         player_data = mlb_players.pipe(add_cols_player_games)
         season_days = cum_season_days(player_data)

@@ -41,8 +41,8 @@ if args.dtd:
         data["injury_location"]
         + data["dtd"].map({True: " (dtd)", False: "", np.nan: "", None: ""}),
     )
+embed()
 
-print(data["injury_location"].unique())
 vocab = Vocab(np.sort(data.injury_location.unique()), special_tokens=["[END]"])
 data["injury_ids"] = vocab(data["injury_location"])
 seq = (

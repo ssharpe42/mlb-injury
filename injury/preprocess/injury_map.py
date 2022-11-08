@@ -133,40 +133,6 @@ alt_injury_spellings = {
 alt_injury_regex = {"|".join(v): k for k, v in alt_injury_spellings.items()}
 
 
-# injury_large_cat_map = {
-#     "break/fracture": ["break", "fracture"],
-#     "minor": [
-#         "spasm",
-#         "irritation",
-#         "discomfort",
-#         "tightness",
-#         "fatigue",
-#         "stiff",
-#         "laceration",
-#         "blister",
-#         "soreness",
-#     ],
-#     "inflammation": ["impingement"],
-#     "contusion/bruise": ["contusion", "bruise"],
-#     "misc/unk": [
-#         "misc",
-#         "unknown",
-#         "nerve",
-#         "dislocation",
-#         "hernia",
-#         "loose bodies",
-#         "spur",
-#         "concussion",
-#     ],
-#     "internal": ["internal"],
-#     "tommy john": ["tommy john"],
-#     "surgery": ["surgery"],
-#     "tear": ["tear"],
-#     "strain": ["strain"],
-#     "sprain": ["sprain"],
-# }
-
-
 injury_large_cat_map = {
     "break/fracture": ["break", "fracture"],
     "minor": [
